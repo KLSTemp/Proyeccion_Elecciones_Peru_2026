@@ -14,5 +14,5 @@ Se aplica una regla directa:
 - Se puede ejecutar a nivel de regiones o provincias.
 
 ## Descarga
-- [Proyección_Regiones.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyección_Regiones.exe)  
-- [Proyección_Provincias.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyección_Provincias.exe)
+- [Proyección_Regiones.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyeccion_Regiones.exe)  
+- [Proyección_Provincias.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyeccion_Provincias.exe)
