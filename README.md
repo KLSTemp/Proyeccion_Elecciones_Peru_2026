@@ -11,8 +11,9 @@ Se aplica una regla directa:
 `votos_proyectados = votos_actuales / %_de_actas_contabilizadas`  
 - La proyección asume que la distribución de votos observada se mantiene en las actas pendientes.  
 - La hipótesis es más confiable a mayor porcentaje de actas contabilizadas y a mayor nivel de desagregación geográfica.  
-- Se puede ejecutar a nivel de regiones o provincias.
+- Se puede ejecutar a nivel de regiones, provincias o distritos.
 
 ## Descarga
 - [Proyección_Regiones.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyeccion_Regiones.exe)  
 - [Proyección_Provincias.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyeccion_Provincias.exe)
+- [Proyección_Distritos.exe](https://github.com/KLSTemp/Proyeccion_Elecciones_Peru_2026/releases/download/v1.0/Proyeccion_Distritos.exe)
