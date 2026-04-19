@@ -280,7 +280,7 @@ async def main():
 
     print("\n\n" + " " * 75 + "|" + f"Votos al {porcentaje_nacional:.3f}%".center(21) + "|" + "Proyección al 100%".center(21))
     print("    " + "Localidad".ljust(60) + "Contado".rjust(10) + " |" + "Lopez".rjust(10) + "Sanchez".rjust(10) + " |" + "Lopez".rjust(10) + "Sanchez".rjust(10))
-    print("  " + "-" * 118)
+    print("  " + "-" * 118 + "\n")
 
     tot_l_cont = tot_s_cont = 0
     tot_l_proy = tot_s_proy = 0
@@ -307,7 +307,7 @@ async def main():
         tot_l_proy += p["Lopez"]
         tot_s_proy += p["Sanchez"]
 
-    print("  " + "-" * 118)
+    print("  " + "-" * 118 + "\n")
     print(" " * 75 + "|" + "Votos contados".center(21) + "|" + "Votos proyectados".center(23))
     print(" " * 75 + "|" + "Lopez".rjust(10) + "Sanchez".rjust(10) + " |" + "Lopez".rjust(10) + "Sanchez".rjust(10))
     print(" " * 75 + f"| {f"{int(tot_l_cont):>9}{int(tot_s_cont):>10}"} |{f"{int(tot_l_proy):>10}{int(tot_s_proy):>10}"}")
