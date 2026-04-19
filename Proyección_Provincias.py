@@ -1,193 +1,215 @@
-import requests
+import asyncio
+import aiohttp
 from datetime import datetime
 import sys
 import os
 import shutil
+import json
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
     "Referer": "https://resultadoelectoral.onpe.gob.pe/main/presidenciales",
     "Origin": "https://resultadoelectoral.onpe.gob.pe",
-    "sec-fetch-site": "same-origin",
-    "sec-fetch-mode": "cors"
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
 }
 
-codigos_deseados = {"8", "10", "35", "16"}
+codigos_deseados = {"35", "10"}
+mapa = {"35": "Lopez", "10": "Sanchez"}
 
-mapa = {
-    "8": "Fujimori",
-    "10": "Sanchez",
-    "35": "Lopez",
-    "16": "Nieto"
-}
+semaphore = asyncio.Semaphore(5)
 
 def progreso(msg):
     width = shutil.get_terminal_size().columns
-    msg = msg[:width-1]  # evita overflow
+    msg = msg[:width-1]
     sys.stdout.write("\r" + " " * width)
     sys.stdout.write("\r" + msg)
     sys.stdout.flush()
 
 def obtener_votos(data_cand):
-    votos_dict = {"Fujimori": 0, "Lopez": 0, "Sanchez": 0, "Nieto": 0}
+    votos_dict = {"Lopez": 0, "Sanchez": 0}
     for c in data_cand.get("data", []):
         codigo = c.get("codigoAgrupacionPolitica")
         if codigo in codigos_deseados:
-            votos_dict[mapa[codigo]] = c.get("totalVotosValidos", 0)
+            votos_dict[mapa.get(codigo)] = c.get("totalVotosValidos", 0)
     return votos_dict
 
-def ejecutar():
+async def fetch_json(session, url, retries=3):
+    for intento in range(retries):
+        try:
+            async with semaphore:
+                async with session.get(url, headers=headers, timeout=20) as resp:
+                    if resp.status != 200:
+                        await asyncio.sleep(0.5 * (intento + 1))
+                        continue
+                    try:
+                        return await resp.json()
+                    except:
+                        text = await resp.text()
+                        if text.strip().startswith(('{', '[')):
+                            return json.loads(text)
+        except Exception as e:
+            if intento == retries - 1:
+                print(f"\n  Error final en fetch: {url}\n   {e}")
+                return None
+        await asyncio.sleep(0.6 * (intento + 1))
+    return None
 
-    filas = []
-
-    tot_f_cont = tot_l_cont = tot_s_cont = tot_n_cont = 0
-    tot_f_proy = tot_l_proy = tot_s_proy = tot_n_proy = 0
-
-    url_dep = "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/departamentos?idEleccion=10&idAmbitoGeografico=1"
-    data_dep = requests.get(url_dep, headers=headers, timeout=25).json()
-    departamentos = {d["nombre"]: d["ubigeo"] for d in data_dep["data"]}
-
-    timestamp = datetime.now().strftime('%d/%m/%y %I:%M %p')
-    print(f"\n  Solicitando data de 'https://resultadoelectoral.onpe.gob.pe/' ({timestamp}).\n")
-
-    provincias_cache = {}
-    total_provincias = 0
-
-    for dep_nombre, dep_ubigeo in departamentos.items():
-        url_prov = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/provincias?idEleccion=10&idAmbitoGeografico=1&idUbigeoDepartamento={dep_ubigeo}"
-        data_prov = requests.get(url_prov, headers=headers, timeout=25).json()
-        provincias_cache[dep_ubigeo] = data_prov["data"]
-        total_provincias += len(data_prov["data"])
-
-    try:
-        url_continentes = "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/departamentos?idEleccion=10&idAmbitoGeografico=2"
-        data_continentes = requests.get(url_continentes, headers=headers, timeout=25).json()
-        num_continentes = len(data_continentes.get("data", []))
-    except:
-        num_continentes = 5
-
-    total_general = total_provincias + num_continentes
-    contador = 0
-
-    for dep_nombre, dep_ubigeo in departamentos.items():
-        for prov in provincias_cache[dep_ubigeo]:
-            contador += 1
-            prov_nombre = prov["nombre"]
-            prov_ubigeo = prov["ubigeo"]
-
-            progreso(f"  [{contador}/{total_general}] Consultando {dep_nombre.title()} - {prov_nombre.title()}...")
-
-            try:
-                url_cand = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/eleccion-presidencial/participantes-ubicacion-geografica-nombre?tipoFiltro=ubigeo_nivel_02&idAmbitoGeografico=1&ubigeoNivel1={dep_ubigeo}&ubigeoNivel2={prov_ubigeo}&idEleccion=10"
-                url_actas = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idAmbitoGeografico=1&idEleccion=10&tipoFiltro=ubigeo_nivel_02&idUbigeoDepartamento={dep_ubigeo}&idUbigeoProvincia={prov_ubigeo}"
-
-                data_cand = requests.get(url_cand, headers=headers, timeout=25).json()
-                data_actas = requests.get(url_actas, headers=headers, timeout=25).json()
-
-                actas = float(data_actas["data"]["actasContabilizadas"])
-                votos = obtener_votos(data_cand)
-
-                tot_f_cont += votos["Fujimori"]
-                tot_l_cont += votos["Lopez"]
-                tot_s_cont += votos["Sanchez"]
-                tot_n_cont += votos["Nieto"]
-
-                proy = {k: round(v / actas * 100) if actas > 0 else 0 for k, v in votos.items()}
-
-                tot_f_proy += proy["Fujimori"]
-                tot_l_proy += proy["Lopez"]
-                tot_s_proy += proy["Sanchez"]
-                tot_n_proy += proy["Nieto"]
-
-                filas.append([f"{dep_nombre.title()} - {prov_nombre.title()}", actas,
-                              votos["Fujimori"], votos["Lopez"], votos["Sanchez"], votos["Nieto"],
-                              proy["Fujimori"], proy["Lopez"], proy["Sanchez"], proy["Nieto"]])
-
-            except Exception as e:
-                print(f"\n  Error en {dep_nombre} - {prov_nombre}: {e}")
+async def procesar_provincia(session, dep_nombre, dep_ubigeo, prov):
+    prov_nombre = prov["nombre"]
+    prov_ubigeo = prov["ubigeo"]
 
     try:
-        url_continentes = "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/departamentos?idEleccion=10&idAmbitoGeografico=2"
-        data_continentes = requests.get(url_continentes, headers=headers, timeout=25).json()
-        continentes = data_continentes["data"]
+        url_cand = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/eleccion-presidencial/participantes-ubicacion-geografica-nombre?tipoFiltro=ubigeo_nivel_02&idAmbitoGeografico=1&ubigeoNivel1={dep_ubigeo}&ubigeoNivel2={prov_ubigeo}&idEleccion=10"
+        url_actas = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idAmbitoGeografico=1&idEleccion=10&tipoFiltro=ubigeo_nivel_02&idUbigeoDepartamento={dep_ubigeo}&idUbigeoProvincia={prov_ubigeo}"
 
-        for cont in continentes:
-            cont_nombre = cont["nombre"]
-            cont_ubigeo = cont["ubigeo"]
+        data_cand, data_actas = await asyncio.gather(
+            fetch_json(session, url_cand),
+            fetch_json(session, url_actas)
+        )
 
-            contador += 1
-            progreso(f"  [{contador}/{total_general}] Consultando Extranjero - {cont_nombre.title()}...")
+        if not data_cand or not data_actas:
+            print(f"  Falló provincia: {dep_nombre} - {prov_nombre}")
+            return None
 
-            try:
-                url_cand_ext = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/eleccion-presidencial/participantes-ubicacion-geografica-nombre?tipoFiltro=ubigeo_nivel_01&idAmbitoGeografico=2&ubigeoNivel1={cont_ubigeo}&idEleccion=10"
-                url_actas_ext = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idAmbitoGeografico=2&idEleccion=10&tipoFiltro=ubigeo_nivel_01&idUbigeoDepartamento={cont_ubigeo}"
+        actas = float(data_actas["data"]["actasContabilizadas"])
+        votos = obtener_votos(data_cand)
 
-                data_cand = requests.get(url_cand_ext, headers=headers, timeout=25).json()
-                data_actas = requests.get(url_actas_ext, headers=headers, timeout=25).json()
+        proy = {k: round(v / actas * 100) if actas > 0 else 0 for k, v in votos.items()}
 
-                actas = float(data_actas["data"]["actasContabilizadas"])
-                votos = obtener_votos(data_cand)
+        return {
+            "ubicacion": f"{dep_nombre.title()} - {prov_nombre.title()}",
+            "actas": actas,
+            "votos": votos,
+            "proy": proy
+        }
+    except Exception as e:
+        print(f"  Error provincia {dep_nombre} - {prov_nombre}: {e}")
+        return None
 
-                tot_f_cont += votos["Fujimori"]
-                tot_l_cont += votos["Lopez"]
-                tot_s_cont += votos["Sanchez"]
-                tot_n_cont += votos["Nieto"]
+async def procesar_continente(session, cont):
+    cont_nombre = cont["nombre"]
+    cont_ubigeo = cont["ubigeo"]
 
-                proy = {k: round(v / actas * 100) if actas > 0 else 0 for k, v in votos.items()}
+    try:
+        url_cand = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/eleccion-presidencial/participantes-ubicacion-geografica-nombre?tipoFiltro=ubigeo_nivel_01&idAmbitoGeografico=2&ubigeoNivel1={cont_ubigeo}&idEleccion=10"
+        url_actas = f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idAmbitoGeografico=2&idEleccion=10&tipoFiltro=ubigeo_nivel_01&idUbigeoDepartamento={cont_ubigeo}"
 
-                tot_f_proy += proy["Fujimori"]
-                tot_l_proy += proy["Lopez"]
-                tot_s_proy += proy["Sanchez"]
-                tot_n_proy += proy["Nieto"]
+        data_cand, data_actas = await asyncio.gather(
+            fetch_json(session, url_cand),
+            fetch_json(session, url_actas)
+        )
 
-                filas.append([f"Extranjero - {cont_nombre.title()}", actas,
-                              votos["Fujimori"], votos["Lopez"], votos["Sanchez"], votos["Nieto"],
-                              proy["Fujimori"], proy["Lopez"], proy["Sanchez"], proy["Nieto"]])
+        if not data_cand or not data_actas:
+            print(f"  Falló continente: {cont_nombre}")
+            return None
 
-            except Exception as e:
-                print(f"\n  Error en EXTRANJERO - {cont_nombre}: {e}")
+        actas = float(data_actas["data"]["actasContabilizadas"])
+        votos = obtener_votos(data_cand)
+        proy = {k: round(v / actas * 100) if actas > 0 else 0 for k, v in votos.items()}
+
+        return {
+            "ubicacion": f"Extranjero - {cont_nombre.title()}",
+            "actas": actas,
+            "votos": votos,
+            "proy": proy
+        }
 
     except Exception as e:
-        print(f"\n  Error al obtener continentes: {e}")
+        print(f"  Error continente {cont_nombre}: {e}")
+        return None
 
-    progreso("")
-    width = shutil.get_terminal_size().columns
-    sys.stdout.write("\r" + " " * width + "\r")
-    print("  Consultas finalizadas.\n")
+async def main():
+    async with aiohttp.ClientSession() as session:
 
-    url_total = "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion"
-    porcentaje_nacional = requests.get(url_total, headers=headers, timeout=12).json()["data"]["actasContabilizadas"]
+        data_dep = await fetch_json(session, "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/departamentos?idEleccion=10&idAmbitoGeografico=1")
 
-    print(" " * 52 + "|" + f"Votos contados al {porcentaje_nacional:.3f}%".center(37) + "|" + "Votos proyectados al 100%".center(37))
-    print(" ".ljust(6)+ "Región - Provincia".ljust(35) + "Porcentaje |" + "Fujimori".rjust(9) + "López".rjust(9) + "Sánchez".rjust(9) + "Nieto".rjust(9) + " |" + "Fujimori".rjust(9) + "López".rjust(9) + "Sánchez".rjust(9) + "Nieto".rjust(9))
-    print(" " + "-" * 127)
+        if not data_dep or "data" not in data_dep:
+            print("  Error obteniendo departamentos")
+            return
 
-    for i, row in enumerate(filas, start=1):
-        ubicacion = str(row[0])
+        departamentos = {d["nombre"]: d["ubigeo"] for d in data_dep["data"]}
+
+        provincias_cache = {}
+        total_provincias = 0
+        tasks_prov = [fetch_json(session, f"https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/provincias?idEleccion=10&idAmbitoGeografico=1&idUbigeoDepartamento={ubigeo}") 
+                      for ubigeo in departamentos.values()]
+
+        prov_results = await asyncio.gather(*tasks_prov)
+        for (dep_nombre, dep_ubigeo), data in zip(departamentos.items(), prov_results):
+            if not data or "data" not in data:
+                print(f"  Error obteniendo provincias de {dep_nombre}")
+                provincias_cache[dep_ubigeo] = []
+                continue
+
+            provincias_cache[dep_ubigeo] = data["data"]
+            total_provincias += len(data["data"])
+
+        data_cont = await fetch_json(session, "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/ubigeos/departamentos?idEleccion=10&idAmbitoGeografico=2")
+        continentes = data_cont.get("data", [])
+
+        timestamp = datetime.now().strftime('%d/%m/%y %I:%M %p')
+        print(f"\n  > Consultando 'https://resultadoelectoral.onpe.gob.pe/' ({timestamp}).\n")
+
+        tasks = []
+        for dep_nombre, dep_ubigeo in departamentos.items():
+            for prov in provincias_cache[dep_ubigeo]:
+                tasks.append(procesar_provincia(session, dep_nombre, dep_ubigeo, prov))
+
+        for cont in continentes:
+            tasks.append(procesar_continente(session, cont))
+
+        resultados = await asyncio.gather(*tasks)
+        filas = [r for r in resultados if r is not None]
+
+    print("  > Consultas finalizadas.\n")
+
+    async with aiohttp.ClientSession() as session:
+        data_total = await fetch_json(session, "https://resultadoelectoral.onpe.gob.pe/presentacion-backend/resumen-general/totales?idEleccion=10&tipoFiltro=eleccion")
+
+        if not data_total or "data" not in data_total:
+            print("  Error obteniendo total nacional")
+            porcentaje_nacional = 0
+        else:
+            porcentaje_nacional = data_total["data"]["actasContabilizadas"]
+
+    print(" " * 51 + "|" + f"Votos al {porcentaje_nacional:.3f}%".center(21) + "|" + "Proyección al 100%".center(21))
+    print(" ".ljust(4) + "Localidad".ljust(36) + "Contado".rjust(10) + " |" + "López".rjust(10) + "Sánchez".rjust(10) + " |" + "López".rjust(10) + "Sánchez".rjust(10))
+    print("  " + "-" * 94)
+
+    tot_l_cont = tot_s_cont = 0
+    tot_l_proy = tot_s_proy = 0
+    for row in filas:
+        ubicacion = str(row["ubicacion"])
         if len(ubicacion) > 38:
             ubicacion = ubicacion[:35] + "..."
         ubicacion = ubicacion.ljust(38)
-        actas_str = f"{row[1]:.3f}%".rjust(9)
+        actas_str = f"{row['actas']:.3f}%".rjust(9)
+        v = row["votos"]
+        p = row["proy"]
+        cont = [f"{int(v['Lopez']):>10}", f"{int(v['Sanchez']):>10}"]
+        proy = [f"{int(p['Lopez']):>10}", f"{int(p['Sanchez']):>10}"]
+        print("  " + f"  {str(row['ubicacion'])[:36].ljust(36)} {actas_str} |{''.join(cont)} |{''.join(proy)}")
+        tot_l_cont += v["Lopez"]
+        tot_s_cont += v["Sanchez"]
+        tot_l_proy += p["Lopez"]
+        tot_s_proy += p["Sanchez"]
 
-        cont = [f"{int(row[2]):>9}", f"{int(row[3]):>9}", f"{int(row[4]):>9}", f"{int(row[5]):>9}"]
-        proy = [f"{int(row[6]):>9}", f"{int(row[7]):>9}", f"{int(row[8]):>9}", f"{int(row[9]):>9}"]
+    print("  " + "-" * 94)
+    linea_cont = f"{int(tot_l_cont):>9}{int(tot_s_cont):>10}"
+    linea_proy = f"{int(tot_l_proy):>10}{int(tot_s_proy):>10}"
 
-        print(f"  {str(i).rjust(3)} {str(row[0])[:35].ljust(35)} {actas_str} |{''.join(cont)} |{''.join(proy)}")
+    print(" " * 51 + "|" + "Votos contados".center(21) + "|" + "Votos proyectados".center(23))
+    print(" " * 51 + "|"  + "López".rjust(10) + "Sánchez".rjust(10) +  " |" + "López".rjust(10) + "Sánchez".rjust(10))
+    print(" " * 51 + f"| {linea_cont} |{linea_proy}")
 
-    print(" " + "-" * 127)
-
-    linea_cont = f"{int(tot_f_cont):>8}{int(tot_l_cont):>9}{int(tot_s_cont):>9}{int(tot_n_cont):>9}"
-    linea_proy = f"{int(tot_f_proy):>9}{int(tot_l_proy):>9}{int(tot_s_proy):>9}{int(tot_n_proy):>9}"
-
-    print(" " * 52 + "|" + "Votos contados acumulados".center(37) + "|" + "Votos proyectados acumulados".center(37))
-    print(" " * 52 + "| Fujimori    López  Sánchez    Nieto | Fujimori    López  Sánchez    Nieto")
-    print(" " * 52 + f"| {linea_cont} |{linea_proy}")
-
-    print("\n\n  La proyección asume que la distribución de votos por provincia o continente se mantiene constante.")
+    print("\n\n  La proyección asume que la distribución de votos se mantiene en las actas pendientes de cada localidad.")
     print("  Hipótesis más confiable a mayor porcentaje de actas contabilizadas.\n")
 
-while True:
+if __name__ == "__main__":
     os.system('cls' if os.name == 'nt' else 'clear')
-    ejecutar()
-    input("\n  Presiona ENTER para actualizar...\n")
+    asyncio.run(main())
+    input("\n  Presiona ENTER para cerrar...\n\n  ")
