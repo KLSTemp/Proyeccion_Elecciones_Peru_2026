@@ -2,9 +2,9 @@
 Script en Python que obtiene datos en tiempo real desde la web de la ONPE y proyecta resultados presidenciales.
 
 ## ¿Cómo funciona?
-- Consulta los endpoints públicos de la [ONPE](https://resultadoelectoral.onpe.gob.pe/)
-- Obtiene votos por candidato y porcentaje de actas
-- Proyecta los resultados al 100% mediante escalamiento
+- Consulta endpoints de la API pública de la [ONPE](https://resultadoelectoral.onpe.gob.pe/)
+- Obtiene votos por candidato y porcentaje de actas procesadas
+- Proyecta los resultados al 100% mediante extrapolación proporcional
 
 ## Metodología
 Se aplica una regla directa:  
